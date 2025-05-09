@@ -28,6 +28,15 @@ type expr =
     (*Não há let rec, app, fn*)    
 (*----------------*)
 
+exception AlgumErro
+
+let rec value e =
+    match e with
+    | Num _ -> true
+    | Bool _ -> true
+    | _ -> false
+
+
 let compute (op: bop) (v1:expr) (v2:expr) : expr = 
     match (op,v1,v2) with
     | (Sum,Num n1, Num n2) -> Num (n1 + n2) (*Soma*)
@@ -40,15 +49,15 @@ let compute (op: bop) (v1:expr) (v2:expr) : expr =
     | (Gt,Num n1, Num n2)  -> Bool (n1 > n2) (*Maior que*)   
     | (And, Bool b1, Bool b2) -> Bool (b1 && b2) (*E lógico*)
     | (Or,  Bool b1, Bool b2) -> Bool (b1 || b2) (*OU lógico*)                                   
-    |  _ -> raise BugTypeInfer (*Podemos melhorar essa exceção*)
+    |  _ -> raise AlgumErro
 
-
+(*
 let rec step (e:expr) : expr = 
     match e with
     (*Já estão em forma normal*)
-    | Num _ -> raise NoRuleApplies
-    | Bool _ -> raise NoRuleApplies
-    | Id _ -> raise NoRuleApplies  
+    | Num _ -> raise AlgumErro
+    | Bool _ -> raise AlgumErro
+    | Id _ -> raise AlgumErro  
     (*Operações binárias*)
     | Binop(o,v1,v2) when (value v1) && (value v2) -> 
         compute o v1 v2
@@ -64,72 +73,92 @@ let rec step (e:expr) : expr =
     | Let(x,t,v1,e2) when value v1 -> subs v1 x e2   (*  {v1/x} e2 *)
     | Let(x,t,e1,e2) -> let e1' = step e1 in Let(x,t,e1',e2) 
     (*Novas implementações*)
-    | Wh 
-    | Asg
-    | New
-    | Deref
-    | Unit _ -> raise NoRuleApplies
-    | Seq
-    | Read(Unit) 
-    | Print(e, )
+    (******)
     (*Qualquer outra combinação deve ser exceção*)
-    | _ -> raise BugParser 
+    | _ -> raise AlgumErro
 
-
-
+*)
 (*******************TypeInfer************************)
 type tyEnv = (string * tipo) list 
 
+let rec lookup (g: tyEnv) (x: string) : tipo option =
+    match g with
+    | [] -> None
+    | (y,t)::ys -> if x = y then Some t else lookup ys x
+
 let rec typeinfer (g: tyEnv) (e: expr) : tipo =
     match e with
+    (*T-INT*)
     | Num _ -> TyInt
+    (*T-BOOL*)
     | Bool _ -> TyBool
+    (*T-BINOP*)
     | Binop(o,e1,e2) -> 
         let t1 = typeinfer g e1  in
         let t2 = typeinfer g e2  in
         (match o with
            Sum | Sub | Mul | Div ->
-             if (t1=TyInt) && (t2=TyInt) then TyInt else raise (TypeError msg_aritmeticos)
+            if (t1=TyInt) && (t2=TyInt) then TyInt else raise AlgumErro
          | Eq | Gt | Lt | Neq ->
-             if (t1=TyInt) && (t2=TyInt) then TyBool else raise (TypeError msg_relacionais)
-         | And | Or -> 
-             if (t1=TyBool) && (t2=TyBool) then TyBool else raise (TypeError msg_booleanos))
+            if (t1=TyInt) && (t2=TyInt) then TyBool 
+            else if (t1=TyBool) && (t2=TyBool) then TyBool 
+            else raise AlgumErro
+        | And | Or ->
+            if (t1=TyBool) && (t2=TyBool) then TyBool else raise AlgumErro)
+    (*T-IF*)
     | If(e1,e2,e3) ->  
     let t1 = typeinfer g e1  in
     if (t1=TyBool) then
         let t2 = typeinfer g e2  in
         let t3 = typeinfer g e3  in
-        if (t2=t3) then t2 else raise (TypeError msg_thenelse)
-    else raise (TypeError msg_condif)
-                    
+        if (t2=t3) then t2 else raise AlgumErro
+    else raise AlgumErro
+    (*T-VAR*)           
     | Id x ->
         (match lookup g x with
-            None -> raise (TypeError (msg_idndeclarado ^ " - " ^ x))
+            None -> raise AlgumErro
             | Some t -> t)
-                        
+    (*T-LET*)             
     | Let(x,t,e1,e2) -> 
         let t1 = typeinfer g e1 in 
         let g' = (x,t)::g in
         let t2 = typeinfer g' e2 in
-        if t1=t then t2 else raise (TypeError msg_letconflito)
-        
+        if t1=t then t2 else raise AlgumErro
+    (*T-WHILE*)
     | Wh(e1,e2) -> 
         let t1 = typeinfer g e1 in
         let t2 = typeinfer g e2 in
-        if(t1=TyBool) && (t2=Unit) then Unit else raise AlgumErro 
+        if(t1=TyBool) && (t2=TyUnit) then TyUnit else raise AlgumErro 
+    (*T-READ*)
     | Read -> TyInt
+    (*T-SEQ*)
     | Seq(e1,e2) ->
         let t1 = typeinfer g e1 in
         let t2 = typeinfer g e2 in
-        if(t1=Unit) then t2 else raise AlgumErro
+        if(t1=TyUnit) then t2 else raise AlgumErro
+    (*T-DEREF*)
     | Deref(e) ->
         let t1 = typeinfer g e in
-
+        (match t1 with
+        | TyRef(t) ->  t
+        | _ -> raise AlgumErro)
+    (*T-PRINT*)
     | Print(e) ->
         let t1 = typeinfer g e in 
-        if(t1=TyInt) then Unit 
+        if(t1=TyInt) then TyUnit 
         else raise AlgumErro
-    | _ -> raise BugParser 
-
+    (*T-UNIT*)
+    | Unit -> TyUnit
+    (*T-NEW*)
+    | New(e) -> 
+        let t1 = typeinfer g e in
+        TyRef(t1)
+    (*T-ATR*)
+    | Asg(e1,e2) ->
+        let t1 = typeinfer g e1 in
+        let t2 = typeinfer g e2 in
+        (match t1 with
+        | TyRef(t) when t = t2 -> TyUnit
+        | _ -> raise AlgumErro)
+        
 (***********************************************)
-
