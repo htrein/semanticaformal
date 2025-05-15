@@ -1,8 +1,8 @@
-(*Tipos de Dados*)
+(*******************Tipos de Dados********************)
 type bop =  
-    | Sum | Sub | Mul | Div   (* operações aritméticas *)
-    | Eq  | Neq | Lt | Gt   (* operações relacionais  *)
-    | And | Or   (* operações lógicas *) 
+    | Sum | Sub | Mul | Div   
+    | Eq  | Neq | Lt | Gt   
+    | And | Or  
 
 type tipo = 
     | TyInt
@@ -26,58 +26,66 @@ type expr =
     | Read
     | Print of expr
     (*Não há let rec, app, fn*)    
-(*----------------*)
+(*****************************************************)
 
 exception AlgumErro
 
+(****************Avaliador***************************)
 let rec value e =
     match e with
     | Num _ -> true
     | Bool _ -> true
     | _ -> false
 
-
 let compute (op: bop) (v1:expr) (v2:expr) : expr = 
     match (op,v1,v2) with
-    | (Sum,Num n1, Num n2) -> Num (n1 + n2) (*Soma*)
-    | (Sub,Num n1, Num n2) -> Num (n1 - n2) (*Subtração*)
-    | (Mul,Num n1, Num n2) -> Num (n1 * n2) (*Multiplicação*)            
-    | (Div,Num n1, Num n2) -> Num (n1 / n2) (*Divisão*)          
-    | (Eq,Num n1, Num n2)  -> Bool (n1 = n2) (*Igualdade*)
-    | (Neq,Num n1, Num n2) -> Bool (n1 != n2) (*Desigualdade*)
-    | (Lt,Num n1, Num n2)  -> Bool (n1 < n2) (*Menor que*)              
-    | (Gt,Num n1, Num n2)  -> Bool (n1 > n2) (*Maior que*)   
-    | (And, Bool b1, Bool b2) -> Bool (b1 && b2) (*E lógico*)
-    | (Or,  Bool b1, Bool b2) -> Bool (b1 || b2) (*OU lógico*)                                   
+    | (Sum,Num n1, Num n2) -> Num (n1 + n2) 
+    | (Sub,Num n1, Num n2) -> Num (n1 - n2) 
+    | (Mul,Num n1, Num n2) -> Num (n1 * n2)            
+    | (Div,Num n1, Num n2) -> Num (n1 / n2)         
+    | (Eq,Num n1, Num n2)  -> Bool (n1 = n2) 
+    | (Neq,Num n1, Num n2) -> Bool (n1 != n2) 
+    | (Lt,Num n1, Num n2)  -> Bool (n1 < n2)              
+    | (Gt,Num n1, Num n2)  -> Bool (n1 > n2) 
+    | (And, Bool b1, Bool b2) -> Bool (b1 && b2) 
+    | (Or,  Bool b1, Bool b2) -> Bool (b1 || b2)                                  
     |  _ -> raise AlgumErro
 
-(*
+let rec subs (v:expr) (x:string) (e:expr) = 
+    match e with 
+    | Num _ -> e
+    | Bool _ -> e
+    | Binop(o,e1,e2) -> Binop(o,  subs v x e1,   subs v x e2)
+    | If(e1,e2,e3) -> If(subs v x e1, subs v x e2, subs v x e3)           
+    | Id y -> if x=y then v else e 
+    | Let(y,t,e1,e2) -> if x=y then Let(y,t,subs v x e1,e2) else Let(y,t,subs v x e1,subs v x e2)   
+    | _ -> raise AlgumErro
+
 let rec step (e:expr) : expr = 
     match e with
-    (*Já estão em forma normal*)
     | Num _ -> raise AlgumErro
-    | Bool _ -> raise AlgumErro
-    | Id _ -> raise AlgumErro  
-    (*Operações binárias*)
-    | Binop(o,v1,v2) when (value v1) && (value v2) -> 
-        compute o v1 v2
-    | Binop(o,v1,e2) when value v1 ->
-        let e2' = step e2 in Binop(o,v1,e2')
-    | Binop(o,e1,e2)  ->
-        let e1' = step e1 in Binop(o,e1',e2)
-    (*Condicional*)
+    | Bool _ -> raise AlgumErro           
+    | Binop(o,v1,v2) when (value v1) && (value v2) -> compute o v1 v2
+    | Binop(o,v1,e2) when value v1 -> let e2' = step e2 in Binop(o,v1,e2')
+    | Binop(o,e1,e2) -> let e1' = step e1 in Binop(o,e1',e2)               
     | If(Bool true, e2, e3) -> e2
     | If(Bool false, e2, e3) -> e3 
     | If(e1, e2, e3) -> let e1' = step e1 in If(e1', e2, e3)
-    (*Atribuição*)
-    | Let(x,t,v1,e2) when value v1 -> subs v1 x e2   (*  {v1/x} e2 *)
+    | Id _ -> raise AlgumErro              
+    | Let(x,t,v1,e2) when value v1 -> subs v1 x e2   
     | Let(x,t,e1,e2) -> let e1' = step e1 in Let(x,t,e1',e2) 
-    (*Novas implementações*)
-    (******)
-    (*Qualquer outra combinação deve ser exceção*)
-    | _ -> raise AlgumErro
+    | _ -> raise BugParser  
+        
+let rec eval (e:expr): expr = 
+    try 
+        let e' = step e in
+        eval e' 
+    with
+        AlgumErro -> e 
 
-*)
+(****************************************************)
+
+
 (*******************TypeInfer************************)
 type tyEnv = (string * tipo) list 
 
@@ -160,5 +168,27 @@ let rec typeinfer (g: tyEnv) (e: expr) : tipo =
         (match t1 with
         | TyRef(t) when t = t2 -> TyUnit
         | _ -> raise AlgumErro)
-        
+
 (***********************************************)
+
+(**************Interpretador********************)
+exception NotValue
+  
+let rec strofvalue (v:expr) : string = 
+  match v with 
+  | Num n -> string_of_int n
+  | Bool b -> string_of_bool b
+  | _    -> raise NotValue
+    
+let rec stroftipo (t:tipo) : string = 
+  match t with
+  | TyInt -> "int"
+  | TyBool -> "bool"
+  
+let rec inter (e:expr) : unit = 
+  try
+    let t = typeinfer []  e in
+    let v = eval e in
+    print_endline ("= " ^ (strofvalue v) ^  ":" ^ (stroftipo t) )
+  with 
+    TypeError msg -> print_endline ("Erro de tipo: " ^ msg)
