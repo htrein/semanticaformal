@@ -26,12 +26,17 @@ type expr =
     | Read
     | Print of expr
     (*Não há let rec, app, fn*)    
+
+(*Adionando memória*)
+type endereco = int
+type memoria = (endereco * expr) list
+
 (*****************************************************)
 
 exception AlgumErro
 
 (****************Avaliador***************************)
-let rec value e =
+let value e =
     match e with
     | Num _ -> true
     | Bool _ -> true
@@ -61,7 +66,7 @@ let rec subs (v:expr) (x:string) (e:expr) =
     | Let(y,t,e1,e2) -> if x=y then Let(y,t,subs v x e1,e2) else Let(y,t,subs v x e1,subs v x e2)   
     | _ -> raise AlgumErro
 
-let rec step (e:expr) : expr = 
+let rec step (e:expr) (mem:memoria): expr * memoria = 
     match e with
     | Num _ -> raise AlgumErro
     | Bool _ -> raise AlgumErro           
@@ -74,9 +79,19 @@ let rec step (e:expr) : expr =
     | Id _ -> raise AlgumErro              
     | Let(x,t,v1,e2) when value v1 -> subs v1 x e2   
     | Let(x,t,e1,e2) -> let e1' = step e1 in Let(x,t,e1',e2) 
-    | _ -> raise BugParser  
-        
-let rec eval (e:expr): expr = 
+    | Wh(e1,e2) -> step (If(e1, Seq(e2, Wh(e1,e2)), Unit)) 
+    | Asg(e1,e2) -> 
+    | New _ ->
+    | Deref(e1) ->  
+    | Unit -> raise AlgumErro
+    | Seq(e1,e2) ->
+    | Read -> raise AlgumErro
+    | Print(e1) when Num e1 -> Unit
+    | Print(e1) -> let e1' = step e1 in Print(e1')
+    | _ -> raise AlgumErro  
+
+let rec eval (e:expr) (mem:memoria): expr * memoria = 
+    (*precisa alterar*)
     try 
         let e' = step e in
         eval e' 
