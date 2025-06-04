@@ -70,33 +70,32 @@ let rec step (e:expr) (mem:memoria): expr * memoria =
     match e with
     | Num _ -> raise AlgumErro
     | Bool _ -> raise AlgumErro           
-    | Binop(o,v1,v2) when (value v1) && (value v2) -> compute o v1 v2
-    | Binop(o,v1,e2) when value v1 -> let e2' = step e2 in Binop(o,v1,e2')
-    | Binop(o,e1,e2) -> let e1' = step e1 in Binop(o,e1',e2)               
-    | If(Bool true, e2, e3) -> e2
-    | If(Bool false, e2, e3) -> e3 
-    | If(e1, e2, e3) -> let e1' = step e1 in If(e1', e2, e3)
+    | Binop(o,v1,v2) when (value v1) && (value v2) -> (compute o v1 v2, mem)
+    | Binop(o,v1,e2) when value v1 -> let (e2',mem') = step e2 mem in (Binop(o,v1,e2'),mem')
+    | Binop(o,e1,e2) -> let (e1',mem') = step e1 mem in (Binop(o,e1',e2),mem')               
+    | If(Bool true, e2, e3) -> (e2,mem)
+    | If(Bool false, e2, e3) -> (e3,mem) 
+    | If(e1, e2, e3) -> let (e1',mem') = step e1 mem in (If(e1', e2, e3),mem')
     | Id _ -> raise AlgumErro              
-    | Let(x,t,v1,e2) when value v1 -> subs v1 x e2   
-    | Let(x,t,e1,e2) -> let e1' = step e1 in Let(x,t,e1',e2) 
-    | Wh(e1,e2) -> step (If(e1, Seq(e2, Wh(e1,e2)), Unit)) 
-    | Asg(e1,e2) -> 
-    | New _ ->
-    | Deref(e1) ->  
+    | Let(x,t,v1,e2) when value v1 -> (subs v1 x e2, mem)   
+    | Let(x,t,e1,e2) -> let (e1',mem') = step e1 mem in (Let(x,t,e1',e2),mem') 
+    | Wh(e1,e2) -> step ((If(e1, Seq(e2, Wh(e1,e2)), Unit)) mem) 
+    | Asg(Num e1,e2) -> raise AlgumErro
+    | New _ -> raise AlgumErro
+    | Deref(e1) ->  raise AlgumErro
     | Unit -> raise AlgumErro
-    | Seq(e1,e2) ->
+    | Seq(e1,e2) -> raise AlgumErro
     | Read -> raise AlgumErro
-    | Print(e1) when Num e1 -> Unit
-    | Print(e1) -> let e1' = step e1 in Print(e1')
+    | Print(Num e1) -> (Unit,mem)
+    | Print(Num e1) -> let e1' = step e1 mem in Print(e1')
     | _ -> raise AlgumErro  
 
 let rec eval (e:expr) (mem:memoria): expr * memoria = 
-    (*precisa alterar*)
     try 
-        let e' = step e in
-        eval e' 
+        let (e', mem') = step e mem in
+        eval e' mem'
     with
-        AlgumErro -> e 
+        AlgumErro -> (e, mem)
 
 (****************************************************)
 
