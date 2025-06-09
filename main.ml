@@ -32,6 +32,13 @@ type endereco = int
 type memoria = (endereco * expr) list
 
 (*****************************************************)
+let input : int list ref = ref [] (*input*)
+let output : int list ref = ref [] (*output*)
+(*como modificar:
+- inserir no inicio: input := elemento :: !input  
+- inserir no final: input := !input @ [elemento]
+*)
+
 
 exception AlgumErro
 
@@ -66,28 +73,52 @@ let rec subs (v:expr) (x:string) (e:expr) =
     | Let(y,t,e1,e2) -> if x=y then Let(y,t,subs v x e1,e2) else Let(y,t,subs v x e1,subs v x e2)   
     | _ -> raise AlgumErro
 
-let rec step (e:expr) (mem:memoria): expr * memoria = 
+let rec step (e:expr) (mem:memoria) (inp: int list) (out: int list): expr * memoria * int list * int list = 
     match e with
+
     | Num _ -> raise AlgumErro
+
     | Bool _ -> raise AlgumErro           
-    | Binop(o,v1,v2) when (value v1) && (value v2) -> (compute o v1 v2, mem)
-    | Binop(o,v1,e2) when value v1 -> let (e2',mem') = step e2 mem in (Binop(o,v1,e2'),mem')
-    | Binop(o,e1,e2) -> let (e1',mem') = step e1 mem in (Binop(o,e1',e2),mem')               
-    | If(Bool true, e2, e3) -> (e2,mem)
-    | If(Bool false, e2, e3) -> (e3,mem) 
-    | If(e1, e2, e3) -> let (e1',mem') = step e1 mem in (If(e1', e2, e3),mem')
+
+    | Binop(o,v1,v2) when (value v1) && (value v2) -> (compute o v1 v2, mem, inp, out)
+
+    | Binop(o,v1,e2) when value v1 -> let (e2',mem',inp',out') = step e2 mem inp out in (Binop(o,v1,e2'),mem', inp', out')
+
+    | Binop(o,e1,e2) -> let (e1',mem',inp',out') = step e1 mem inp out in (Binop(o,e1',e2),mem', inp', out')      
+
+    | If(Bool true, e2, e3) -> (e2,mem,inp,out)
+
+    | If(Bool false, e2, e3) -> (e3,mem,inp,out) 
+
+    | If(e1, e2, e3) -> let (e1',mem',inp',out') = step e1 mem in (If(e1', e2, e3),mem',inp',out')
+
     | Id _ -> raise AlgumErro              
-    | Let(x,t,v1,e2) when value v1 -> (subs v1 x e2, mem)   
-    | Let(x,t,e1,e2) -> let (e1',mem') = step e1 mem in (Let(x,t,e1',e2),mem') 
-    | Wh(e1,e2) -> step ((If(e1, Seq(e2, Wh(e1,e2)), Unit)) mem) 
+
+    | Let(x,t,v1,e2) when value v1 -> (subs v1 x e2, mem, inp, out)  
+
+    | Let(x,t,e1,e2) -> let (e1',mem',inp',out') = step e1 mem in (Let(x,t,e1',e2),mem',inp',out') 
+
+    | Wh(e1,e2) -> step ((If(e1, Seq(e2, Wh(e1,e2)), Unit)), mem, inp, out) 
+
     | Asg(Num e1,e2) -> raise AlgumErro
+
     | New _ -> raise AlgumErro
+
     | Deref(e1) ->  raise AlgumErro
+
     | Unit -> raise AlgumErro
+
     | Seq(e1,e2) -> raise AlgumErro
-    | Read -> raise AlgumErro
-    | Print(Num e1) -> (Unit,mem)
-    | Print(Num e1) -> let e1' = step e1 mem in Print(e1')
+
+    | Read -> 
+        (match inp with
+        | n::rest -> (Num n, mem, rest, out)
+        | [] -> raise AlgumErro)
+
+    | Print(Num e1) -> (Unit, mem, inp, !out @ [e1])
+
+    | Print(e1) -> let e1' = step e1 mem in Print(e1')
+
     | _ -> raise AlgumErro  
 
 let rec eval (e:expr) (mem:memoria): expr * memoria = 
@@ -202,7 +233,7 @@ let rec stroftipo (t:tipo) : string =
 let rec inter (e:expr) : unit = 
   try
     let t = typeinfer []  e in
-    let v = eval e in
+    let (v, mem) = eval e [] in
     print_endline ("= " ^ (strofvalue v) ^  ":" ^ (stroftipo t) )
   with 
     TypeError msg -> print_endline ("Erro de tipo: " ^ msg)
