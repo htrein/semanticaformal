@@ -41,16 +41,18 @@ let output : int list ref = ref []
 *)
 
 (*Exceções*)
-exception AlgumErro of string
+exception AlgumErro of string (*remover depois*)
+exception StepError of string
 exception TypeError of string
 (*...*)
-(*Mensagens*)
+(*Mensagens*) (*adicionar mais mensagens de exceções*)
 let msg_booleanos = "Ambos os operandos devem ser booleanos."
 let msg_relacionais_aritmeticos = "Ambos os operandos devem ser inteiros."
 let msg_thenelse = "As expressões do então e do senão devem ter o mesmo tipo."
 let msg_condicao = "A condição do if deve ser booleana."
 let msg_notvalue = "A expressão não é um valor."
 let msg_atribuicao =  "O primeiro argumento da atribuição deve ser uma referência do mesmo tipo do segundo."
+let msg_deref = "A expressão de desreferência deve ser uma referência."
 (*...*)
 
 (****************Avaliador***************************)
@@ -91,7 +93,7 @@ let rec step (e:expr) (mem:memoria) (inp: int list) (out: int list): expr * memo
     | Num _ -> TyInt 
     | Bool _ -> TyBool
     | Unit _ -> TyUnit
-    (*Nao tem regra?*)
+    (*Nao tem regra?*) (*verificar existencia de ID*)
     | Id x -> 
       (match lookup g x with
        | None -> raise AlgumErro
@@ -114,25 +116,29 @@ let rec step (e:expr) (mem:memoria) (inp: int list) (out: int list): expr * memo
     | Let(x,t,e1,e2) -> let (e1',mem',inp',out') = step e1 mem in (Let(x,t,e1',e2),mem',inp',out') 
     (*E-WHILE*)
     | Wh(e1,e2) -> step ((If(e1, Seq(e2, Wh(e1,e2)), Unit)), mem, inp, out) 
-    (*ATR1*)
+    (*ATR1*) (*implementar aqui*)
     | Asg(Num e1,e2) -> raise AlgumErro
-    (*ATR2*)
+    (*ATR2*) (*verificar TyRef aqui*)
     | Asg(TyRef l,e) -> let (e', mem', inp', out') = step e mem inp out in (Asg(TyRef l, e'), mem', inp', out') 
     (*ATR*)
     | Asg(e1, e2) -> let (e1', mem', inp', out') = step e1 mem inp out in (Asg(e1', e2), mem', inp', out')
-    (*NEW1*)
+    (*NEW1*) (*implementar aqui*)
     | New(v) when value v -> raise AlgumErro
     (*NEW*)
     | New(e) -> let (e', mem', inp', out') = step e mem inp out in (New(e'), mem', inp', out')
     (*DEREF1*)
-    | Deref(TyRef l) -> raise AlgumErro
+    | Deref(l) when value l -> 
+        (match procura l mem with
+        | Some v -> (v, mem, inp, out)
+        | None -> raise (StepError msg_deref)
+        )
     (*DEREF*)
     | Deref(e) -> let (e', mem', inp', out') = step e mem inp out in (Deref(e'), mem', inp', out')
     (*SEQ*)
     | Seq(e1,e2) -> let (e1', mem', inp', out') = step e1 mem inp out in (Seq(e1',e2), mem', inp', out')
-    (*SEQ1*)
+    (*SEQ1*) (*verificar TyUnit aqui*)
     | Seq(TyUnit e1, e2) -> (e2, mem, inp, out)
-    (*READ*)
+    (*READ*) (*verficar argumento do read*)
     | Read _    -> 
         (match inp with
         | n::rest -> (Num n, mem, rest, out)
@@ -153,6 +159,12 @@ let rec eval (e:expr) (mem:memoria): expr * memoria =
     with
         AlgumErro -> (e, mem)
 
+(*Funcao auxiliar para procurar um valor numa lista*)
+let rec procura valor lista = 
+    match lista with
+    | [] -> None
+    | x::xs -> if x = valor then Some x else procura valor xs
+    
 (****************************************************)
 
 
