@@ -27,26 +27,38 @@ type expr =
     | Print of expr
     (*Não há let rec, app, fn*)    
 
-(*Adionando memória*)
+
+(*Memória*)
 type endereco = int
 type memoria = (endereco * expr) list
 
-(*****************************************************)
-let input : int list ref = ref [] (*input*)
-let output : int list ref = ref [] (*output*)
+(*I/O*)
+let input : int list ref = ref [] 
+let output : int list ref = ref [] 
 (*como modificar:
 - inserir no inicio: input := elemento :: !input  
 - inserir no final: input := !input @ [elemento]
 *)
 
-
-exception AlgumErro
+(*Exceções*)
+exception AlgumErro of string
+exception TypeError of string
+(*...*)
+(*Mensagens*)
+let msg_booleanos = "Ambos os operandos devem ser booleanos."
+let msg_relacionais_aritmeticos = "Ambos os operandos devem ser inteiros."
+let msg_thenelse = "As expressões do então e do senão devem ter o mesmo tipo."
+let msg_condicao = "A condição do if deve ser booleana."
+let msg_notvalue = "A expressão não é um valor."
+let msg_atribuicao =  "O primeiro argumento da atribuição deve ser uma referência do mesmo tipo do segundo."
+(*...*)
 
 (****************Avaliador***************************)
-let value e =
-    match e with
+let value e = (*existem mais valores agora, acredito que precisamos adicionar*)
+    match e
     | Num _ -> true
     | Bool _ -> true
+    | Unit -> true 
     | _ -> false
 
 let compute (op: bop) (v1:expr) (v2:expr) : expr = 
@@ -75,51 +87,64 @@ let rec subs (v:expr) (x:string) (e:expr) =
 
 let rec step (e:expr) (mem:memoria) (inp: int list) (out: int list): expr * memoria * int list * int list = 
     match e with
-
-    | Num _ -> raise AlgumErro
-
-    | Bool _ -> raise AlgumErro           
-
+    (*Valores*)
+    | Num _ -> TyInt 
+    | Bool _ -> TyBool
+    | Unit _ -> TyUnit
+    (*Nao tem regra?*)
+    | Id x -> 
+      (match lookup g x with
+       | None -> raise AlgumErro
+       | Some t -> t) (*pq Some?*)
+    (*OP*)
     | Binop(o,v1,v2) when (value v1) && (value v2) -> (compute o v1 v2, mem, inp, out)
-
-    | Binop(o,v1,e2) when value v1 -> let (e2',mem',inp',out') = step e2 mem inp out in (Binop(o,v1,e2'),mem', inp', out')
-
+    (*OP2*)
+    | Binop(o,v1,e2) when value v1 -> let (e2',mem',inp',out') = step e2 mem inp out in (Binop(o,v1,e2'), mem', inp', out')
+    (*OP1*)
     | Binop(o,e1,e2) -> let (e1',mem',inp',out') = step e1 mem inp out in (Binop(o,e1',e2),mem', inp', out')      
-
+    (*IF1*)
     | If(Bool true, e2, e3) -> (e2,mem,inp,out)
-
+    (*IF2*)
     | If(Bool false, e2, e3) -> (e3,mem,inp,out) 
-
-    | If(e1, e2, e3) -> let (e1',mem',inp',out') = step e1 mem in (If(e1', e2, e3),mem',inp',out')
-
-    | Id _ -> raise AlgumErro              
-
+    (*IF3*)
+    | If(e1, e2, e3) -> let (e1',mem',inp',out') = step e1 mem in (If(e1', e2, e3),mem',inp',out')            
+    (*LET2*)
     | Let(x,t,v1,e2) when value v1 -> (subs v1 x e2, mem, inp, out)  
-
+    (*LET1*)
     | Let(x,t,e1,e2) -> let (e1',mem',inp',out') = step e1 mem in (Let(x,t,e1',e2),mem',inp',out') 
-
+    (*E-WHILE*)
     | Wh(e1,e2) -> step ((If(e1, Seq(e2, Wh(e1,e2)), Unit)), mem, inp, out) 
-
+    (*ATR1*)
     | Asg(Num e1,e2) -> raise AlgumErro
-
-    | New _ -> raise AlgumErro
-
-    | Deref(e1) ->  raise AlgumErro
-
-    | Unit -> raise AlgumErro
-
-    | Seq(e1,e2) -> raise AlgumErro
-
-    | Read -> 
+    (*ATR2*)
+    | Asg(TyRef l,e) -> let (e', mem', inp', out') = step e mem inp out in (Asg(TyRef l, e'), mem', inp', out') 
+    (*ATR*)
+    | Asg(e1, e2) -> let (e1', mem', inp', out') = step e1 mem inp out in (Asg(e1', e2), mem', inp', out')
+    (*NEW1*)
+    | New(v) when value v -> raise AlgumErro
+    (*NEW*)
+    | New(e) -> let (e', mem', inp', out') = step e mem inp out in (New(e'), mem', inp', out')
+    (*DEREF1*)
+    | Deref(TyRef l) -> raise AlgumErro
+    (*DEREF*)
+    | Deref(e) -> let (e', mem', inp', out') = step e mem inp out in (Deref(e'), mem', inp', out')
+    (*SEQ*)
+    | Seq(e1,e2) -> let (e1', mem', inp', out') = step e1 mem inp out in (Seq(e1',e2), mem', inp', out')
+    (*SEQ1*)
+    | Seq(TyUnit e1, e2) -> (e2, mem, inp, out)
+    (*READ*)
+    | Read _    -> 
         (match inp with
         | n::rest -> (Num n, mem, rest, out)
         | [] -> raise AlgumErro)
-
+    (*PRINT-N*)
     | Print(Num e1) -> (Unit, mem, inp, !out @ [e1])
-
-    | Print(e1) -> let e1' = step e1 mem in Print(e1')
+    (*PRINT*)
+    | Print(e) -> let (e', mem', inp', out') = step e mem inp out in (Print(e'), mem', inp', out')
 
     | _ -> raise AlgumErro  
+
+
 
 let rec eval (e:expr) (mem:memoria): expr * memoria = 
     try 
@@ -151,21 +176,19 @@ let rec typeinfer (g: tyEnv) (e: expr) : tipo =
         let t2 = typeinfer g e2  in
         (match o with
            Sum | Sub | Mul | Div ->
-            if (t1=TyInt) && (t2=TyInt) then TyInt else raise AlgumErro
-         | Eq | Gt | Lt | Neq ->
-            if (t1=TyInt) && (t2=TyInt) then TyBool 
-            else if (t1=TyBool) && (t2=TyBool) then TyBool 
-            else raise AlgumErro
+            if (t1=TyInt) && (t2=TyInt) then TyInt else raise (TypeError msg_relacionais_aritmeticos)
+        | Eq | Gt | Lt | Neq ->
+            if (t1=TyInt) && (t2=TyInt) then TyBool else raise (TypeError msg_relacionais_aritmeticos)
         | And | Or ->
-            if (t1=TyBool) && (t2=TyBool) then TyBool else raise AlgumErro)
+            if (t1=TyBool) && (t2=TyBool) then TyBool else raise (TypeError msg_booleanos))
     (*T-IF*)
     | If(e1,e2,e3) ->  
-    let t1 = typeinfer g e1  in
+    let t1 = typeinfer g e1 in
     if (t1=TyBool) then
         let t2 = typeinfer g e2  in
         let t3 = typeinfer g e3  in
-        if (t2=t3) then t2 else raise AlgumErro
-    else raise AlgumErro
+        if (t2=t3) then t2 else raise (TypeError msg_thenelse)
+    else raise (TypeError msg_condicao)
     (*T-VAR*)           
     | Id x ->
         (match lookup g x with
@@ -212,23 +235,26 @@ let rec typeinfer (g: tyEnv) (e: expr) : tipo =
         let t2 = typeinfer g e2 in
         (match t1 with
         | TyRef(t) when t = t2 -> TyUnit
-        | _ -> raise AlgumErro)
+        | TyRef _ -> raise (TypeError msg_atribuicao)
+        | _ -> raise (TypeError msg_atribuicao))
 
 (***********************************************)
 
 (**************Interpretador********************)
 exception NotValue
   
-let rec strofvalue (v:expr) : string = 
+let rec strofvalue (v:expr) : string = (*verificar*)
   match v with 
   | Num n -> string_of_int n
   | Bool b -> string_of_bool b
-  | _    -> raise NotValue
+  | _    -> raise (NotValue msg_notvalue)
     
 let rec stroftipo (t:tipo) : string = 
   match t with
   | TyInt -> "int"
   | TyBool -> "bool"
+  | TyRef t' -> "ref " ^ (stroftipo t')
+  | TyUnit -> "unit"
   
 let rec inter (e:expr) : unit = 
   try
