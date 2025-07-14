@@ -1,3 +1,4 @@
-# semanticaformal
-Trabalho de implementação de L1 imperativa 
+# Semântica Formal
+Trabalho de implementação de uma linguagem imperativa em OCaml
+
 
